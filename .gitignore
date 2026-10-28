@@ -59,3 +59,7 @@ javac_opts2.txt
 # 开发过程手动备份(带中文后缀)与数据库导出中间产物
 *.bak_*
 sam_ai_lab_full.sql
+
+# 开发过程手动备份(带中文后缀)与数据库导出中间产物
+*.bak_*
+sam_ai_lab_full.sql
