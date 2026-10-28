@@ -23,6 +23,23 @@ spring:
     url: jdbc:mysql://localhost:3306/sam_ai_lab?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false
     username: root
     password: root
+  # Spring AI: 通过 OpenAI 兼容协议接入 DeepSeek
+  # API Key 走环境变量注入，避免明文入库；本地可设 DEEPSEEK_API_KEY 环境变量
+  ai:
+    openai:
+      api-key: ${DEEPSEEK_API_KEY:}
+      # 注意：base-url 不要带 /v1，Spring AI 内部会自动补齐路径段
+      base-url: https://api.deepseek.com
+      chat:
+        options:
+          model: deepseek-chat
+          temperature: 0.7
+          max-tokens: 2048
+      # 超时与重试属于 HTTP 客户端级别配置，不能写在 chat.options 下
+      client:
+        connect-timeout: 10s
+        read-timeout: 60s
+        max-retries: 2
 
 mybatis-plus:
   configuration:
@@ -38,9 +55,24 @@ knife4j:
   enable: true
   setting:
     language: zh_cn
+    enable-footer: false
+  springdoc:
+    swagger-ui:
+      path: /doc.html
 
 # JWT
 jwt:
   secret: ${JWT_SECRET:sam-member-mgmt-secret-key-2026-graduation-project}
   expiration: 1800000        # access token 30分钟
   refresh-expiration: 604800000  # refresh token 7天
+
+# AI 助手业务配置
+sam:
+  ai:
+    timeout-seconds: 30
+    system-prompt: |
+      你是山姆会员店的智能客服助手，负责解答会员关于积分、等级、退换货政策、会员权益等问题。
+      回答要求：
+      1. 用简洁的中文回答，不超过 5 句话；
+      2. 不确定的信息明确说不确定，不要编造政策；
+      3. 涉及具体订单、账户余额等个人数据时，说明需要转接人工客服核实。

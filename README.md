@@ -16,8 +16,20 @@
 | Layer | State | Notes |
 | --- | --- | --- |
 | Membership management system | Done | Full CRUD backend, RBAC, member portal, order and points logic |
-| AI service desk | In development | Spring AI integration under active build, see Roadmap |
+| AI service desk | Working | Spring AI 1.0.0 wired to DeepSeek over the OpenAI-compatible protocol; synchronous Q&A, SSE streaming and failure fallback all verified |
+| Grounded Q&A (RAG) | In development | `pgvector` retrieval layer next, see Roadmap |
+| Tool calling | Planned | Model will invoke real business APIs instead of guessing live data |
 | Observability layer | Planned | `ai_chat_log` schema designed, implementation pending |
+
+Verified behaviour of the current AI layer:
+
+| Scenario | Result |
+| --- | --- |
+| Synchronous Q&A | HTTP 200, ~1.7 s round trip including model latency |
+| Streaming (SSE) | Token-level output confirmed over `text/event-stream` |
+| Empty input | HTTP 400 with a validation message, no model call issued |
+| Invalid API key | HTTP 500 with a user-facing fallback message, service stays up, full exception stack logged |
+| Model timeout / unreachable | HTTP 503 fallback, request tracing preserved |
 
 This repository is a working portfolio project. The AI layer is being built in
 public, commit by commit, and the Roadmap section is kept honest with the actual
@@ -103,14 +115,21 @@ client interface so the model can be swapped without touching business code.
 
 | Layer | Choice |
 | --- | --- |
-| Backend | Spring Boot 2.7.18, JDK 17, Spring AI (in progress) |
-| Persistence | MyBatis-Plus 3.5.3.1, MySQL 8.x, pgvector for embeddings |
-| Security | JWT (jjwt 0.11.5), BCrypt, HandlerInterceptor, separate member / admin token spaces |
-| AI | Spring AI, DeepSeek API, Ollama for local models, RAG over pgvector |
+| Backend | Spring Boot 3.4.5, JDK 17, Jakarta EE namespace |
+| Persistence | MyBatis-Plus 3.5.7 (`mybatis-plus-spring-boot3-starter`), MySQL 8.x, pgvector for embeddings |
+| Security | JWT (jjwt 0.12.6), BCrypt, HandlerInterceptor, separate member / admin token spaces |
+| AI | Spring AI 1.0.0 (`spring-ai-starter-model-openai`), DeepSeek via OpenAI-compatible protocol, Ollama for local models, RAG over pgvector |
 | Frontend | Vue 3, Vite, Element Plus, Pinia, Vue Router, ECharts |
 | Observability | `ai_chat_log` table, Micrometer metrics, structured request tracing |
-| API docs | Knife4j 4.1.0 (`/doc.html` when running) |
+| API docs | Knife4j 4.5.0 Jakarta (`/doc.html` when running) |
 | Build | Maven Wrapper, npm |
+
+> **Why Spring Boot 3.4?** Spring AI 1.0 requires Spring Boot 3.4+. Staying on
+> 2.7 would have meant either an unsupported framework pairing or dropping to a
+> raw HTTP client and hand-rolling RAG and tool calling. The upgrade touched
+> 22 `javax.*` references across 16 files, of which only two namespaces
+> (`servlet`, `validation`) needed migrating; `javax.crypto` and `javax.imageio`
+> are JDK-owned and correctly stay as they are.
 
 ---
 
@@ -150,23 +169,44 @@ cd frontend && npm install && npm run dev
 Open `http://localhost:5173`. Demo accounts use password `123456`:
 `admin`, `manager01`, `cashier01`, `delivery01`.
 
-### AI layer configuration (planned)
+### AI layer configuration
 
-The AI module is wired through Spring AI's OpenAI-compatible client so both a
-hosted API and a local model work with the same code path.
+The AI module runs through Spring AI's OpenAI-compatible client, so a hosted API
+and a local model share the same code path. The API key is injected from the
+environment and never committed.
 
 ```yaml
 spring:
   ai:
     openai:
+      # base-url must not include /v1, Spring AI appends the path itself
       base-url: https://api.deepseek.com
       api-key: ${DEEPSEEK_API_KEY}
       chat:
         options:
           model: deepseek-chat
-    vectorstore:
-      pgvector:
-        initialize-schema: true
+          temperature: 0.7
+          max-tokens: 2048
+      client:
+        connect-timeout: 10s
+        read-timeout: 60s
+        max-retries: 2
+```
+
+Set the key before starting:
+
+```bash
+export DEEPSEEK_API_KEY=sk-xxxx        # Windows: $env:DEEPSEEK_API_KEY="sk-xxxx"
+```
+
+Two endpoints are exposed:
+
+```bash
+# synchronous
+curl "http://localhost:8081/api/ai/chat?question=how many points do I earn"
+
+# streaming (SSE)
+curl -N "http://localhost:8081/api/ai/chat/stream?question=what tiers exist"
 ```
 
 For a fully local setup, point the client at Ollama instead. No external

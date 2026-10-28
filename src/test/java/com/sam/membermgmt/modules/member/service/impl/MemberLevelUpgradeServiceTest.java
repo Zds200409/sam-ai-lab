@@ -5,6 +5,7 @@ import com.sam.membermgmt.modules.member.dto.MemberLevelUpgradeDTO;
 import com.sam.membermgmt.modules.member.dto.MemberLevelUpgradeVO;
 import com.sam.membermgmt.modules.member.entity.Member;
 import com.sam.membermgmt.modules.member.entity.MemberLevel;
+import com.sam.membermgmt.modules.member.entity.MemberLevelChangeRecord;
 import com.sam.membermgmt.modules.member.entity.MemberUpgradePayment;
 import com.sam.membermgmt.modules.member.mapper.MemberLevelChangeRecordMapper;
 import com.sam.membermgmt.modules.member.mapper.MemberLevelMapper;
@@ -78,7 +79,7 @@ class MemberLevelUpgradeServiceTest {
         verify(memberMapper).updateById(memberCap.capture());
         assertEquals(3L, memberCap.getValue().getCurrentLevelId());
 
-        verify(changeRecordMapper).insert(any());
+        verify(changeRecordMapper).insert(any(MemberLevelChangeRecord.class));
 
         ArgumentCaptor<MemberUpgradePayment> payCap = ArgumentCaptor.forClass(MemberUpgradePayment.class);
         verify(upgradePaymentMapper).insert(payCap.capture());
@@ -101,6 +102,6 @@ class MemberLevelUpgradeServiceTest {
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> authService.upgradeLevel(1L, dto));
         assertTrue(ex.getMessage().contains("最高"));
-        verify(upgradePaymentMapper, never()).insert(any());
+        verify(upgradePaymentMapper, never()).insert(any(MemberUpgradePayment.class));
     }
 }

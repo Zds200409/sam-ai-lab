@@ -70,7 +70,7 @@ class MemberLevelExpireTaskTest {
 
         task.downgradeExpiredMembers();
 
-        verify(memberMapper, never()).updateById(any());
-        verify(changeRecordMapper, never()).insert(any());
+        verify(memberMapper, never()).updateById(any(Member.class));
+        verify(changeRecordMapper, never()).insert(any(MemberLevelChangeRecord.class));
     }
 }

@@ -60,6 +60,19 @@ javac_opts2.txt
 *.bak_*
 sam_ai_lab_full.sql
 
-# 开发过程手动备份(带中文后缀)与数据库导出中间产物
-*.bak_*
-sam_ai_lab_full.sql
+# 本地构建与运行产物
+build.log
+app.log
+app.err
+app-fallback.log
+app-fallback.err
+.build-exit
+.app-pid
+build.ps1
+run-app.ps1
+mvnw.bat
+
+# 本地密钥配置（严禁入库）
+.env
+application-local.yml
+local-secrets.yml

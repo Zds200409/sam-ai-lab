@@ -2,7 +2,7 @@ package com.sam.membermgmt.modules.system.dto;
 
 import lombok.Data;
 
-import javax.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotBlank;
 
 @Data
 public class LoginDTO {

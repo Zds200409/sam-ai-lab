@@ -3,7 +3,7 @@ package com.sam.membermgmt.modules.member.dto;
 import com.sam.membermgmt.modules.order.dto.CartItemDTO;
 import lombok.Data;
 
-import javax.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotEmpty;
 import java.util.List;
 
 /**
