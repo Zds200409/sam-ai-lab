@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sam.membermgmt.modules.statistics.mapper.StatisticsMapper">
+
+    <!-- 今日订单数和金额 -->
+    <select id="selectTodayOrderStats" resultType="map">
+        SELECT
+            COUNT(1) AS orderCount,
+            IFNULL(SUM(actual_amount), 0) AS totalAmount
+        FROM `order`
+        WHERE DATE(create_time) = CURDATE() AND status = 1
+    </select>
+
+    <!-- 今日新增会员（排除已逻辑删除） -->
+    <select id="selectTodayNewMembers" resultType="int">
+        SELECT COUNT(1) FROM member WHERE deleted = 0 AND DATE(create_time) = CURDATE()
+    </select>
+
+    <!-- 本月销售总额 -->
+    <select id="selectMonthAmount" resultType="java.math.BigDecimal">
+        SELECT IFNULL(SUM(actual_amount), 0) FROM `order`
+        WHERE DATE_FORMAT(create_time, '%Y-%m') = DATE_FORMAT(CURDATE(), '%Y-%m') AND status = 1
+    </select>
+
+    <!-- 总会员数（排除已逻辑删除） -->
+    <select id="selectTotalMembers" resultType="int">
+        SELECT COUNT(1) FROM member WHERE status = 1 AND deleted = 0
+    </select>
+
+    <!-- 总商品数（排除已逻辑删除） -->
+    <select id="selectTotalProducts" resultType="int">
+        SELECT COUNT(1) FROM product WHERE status = 1 AND deleted = 0
+    </select>
+
+    <!-- 本月发放积分 -->
+    <select id="selectMonthPointsIssued" resultType="int">
+        SELECT IFNULL(SUM(points), 0) FROM member_points_record
+        WHERE points > 0 AND DATE_FORMAT(create_time, '%Y-%m') = DATE_FORMAT(CURDATE(), '%Y-%m')
+    </select>
+
+    <!-- 30天内到期会员数（排除已逻辑删除） -->
+    <select id="selectPendingRenewals" resultType="int">
+        SELECT COUNT(1) FROM member
+        WHERE status = 1 AND deleted = 0
+          AND expiry_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)
+    </select>
+
+    <!-- 近N天销售趋势 -->
+    <select id="selectSalesTrend" resultType="map">
+        SELECT
+            DATE(create_time) AS date,
+            COUNT(1) AS orderCount,
+            IFNULL(SUM(actual_amount), 0) AS totalAmount
+        FROM `order`
+        WHERE create_time >= DATE_SUB(CURDATE(), INTERVAL #{days} DAY) AND status = 1
+        GROUP BY DATE(create_time)
+        ORDER BY date
+    </select>
+
+    <!-- 会员等级分布（排除已逻辑删除） -->
+    <select id="selectMemberLevelDistribution" resultType="map">
+        SELECT
+            ml.level_name AS name,
+            COUNT(m.id) AS value
+        FROM member_level ml
+        LEFT JOIN member m ON ml.id = m.current_level_id AND m.status = 1 AND m.deleted = 0
+        GROUP BY ml.id, ml.level_name
+        ORDER BY ml.sort_order
+    </select>
+
+    <!-- 热销商品TOP N -->
+    <select id="selectTopProducts" resultType="map">
+        SELECT
+            oi.product_name AS name,
+            SUM(oi.quantity) AS quantity,
+            SUM(oi.subtotal) AS amount
+        FROM order_item oi
+        INNER JOIN `order` o ON oi.order_id = o.id AND o.status = 1
+        GROUP BY oi.product_id, oi.product_name
+        ORDER BY quantity DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- 分类销售占比 -->
+    <select id="selectSalesByCategory" resultType="map">
+        SELECT
+            pc.category_name AS name,
+            IFNULL(SUM(oi.subtotal), 0) AS value
+        FROM order_item oi
+        INNER JOIN `order` o ON oi.order_id = o.id AND o.status = 1
+        INNER JOIN product p ON oi.product_id = p.id
+        INNER JOIN product_category pc ON p.category_id = pc.id
+        GROUP BY pc.id, pc.category_name
+        ORDER BY value DESC
+    </select>
+
+    <!-- 按月统计新增会员（排除已逻辑删除） -->
+    <select id="selectNewMembersByMonth" resultType="map">
+        SELECT
+            DATE_FORMAT(create_time, '%Y-%m') AS month,
+            COUNT(1) AS count
+        FROM member
+        WHERE deleted = 0
+          AND create_time >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+        GROUP BY DATE_FORMAT(create_time, '%Y-%m')
+        ORDER BY month
+    </select>
+
+    <!-- 今日生日会员（排除已逻辑删除） -->
+    <select id="selectTodayBirthdays" resultType="map">
+        SELECT id, name, phone
+        FROM member
+        WHERE status = 1
+          AND deleted = 0
+          AND birthday IS NOT NULL
+          AND DATE_FORMAT(birthday, '%m-%d') = DATE_FORMAT(CURDATE(), '%m-%d')
+    </select>
+
+    <!-- 7天内到期会员（排除已逻辑删除） -->
+    <select id="selectExpiringSoon" resultType="map">
+        SELECT id, name, phone, expiry_date AS expiryDate
+        FROM member
+        WHERE status = 1
+          AND deleted = 0
+          AND expiry_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY)
+        ORDER BY expiry_date
+    </select>
+
+    <!-- 按日期范围查询销售趋势 -->
+    <select id="selectSalesTrendByRange" resultType="map">
+        SELECT
+            DATE(create_time) AS date,
+            COUNT(1) AS orderCount,
+            IFNULL(SUM(actual_amount), 0) AS totalAmount
+        FROM `order`
+        WHERE status = 1
+        <if test="startDate != null and startDate != '' and endDate != null and endDate != ''">
+            AND create_time BETWEEN #{startDate} AND #{endDate}
+        </if>
+        <if test="startDate == null or startDate == '' or endDate == null or endDate == ''">
+            AND create_time >= DATE_SUB(CURDATE(), INTERVAL #{days} DAY)
+        </if>
+        GROUP BY DATE(create_time)
+        ORDER BY date
+    </select>
+
+    <!-- 每日统计汇总：按 stat_date 幂等写入（依赖 daily_statistics.uk_stat_date 唯一键） -->
+    <insert id="upsertDailyStatistics">
+        INSERT INTO daily_statistics
+            (stat_date, total_order_count, total_amount, total_member_count,
+             new_member_count, points_issued, points_consumed)
+        SELECT #{statDate},
+               (SELECT COUNT(1) FROM `order`
+                 WHERE status = 1 AND DATE(create_time) = #{statDate}),
+               (SELECT IFNULL(SUM(actual_amount), 0) FROM `order`
+                 WHERE status = 1 AND DATE(create_time) = #{statDate}),
+               (SELECT COUNT(1) FROM member
+                 WHERE deleted = 0 AND DATE(create_time) &lt;= #{statDate}),
+               (SELECT COUNT(1) FROM member
+                 WHERE deleted = 0 AND DATE(create_time) = #{statDate}),
+               (SELECT IFNULL(SUM(points), 0) FROM member_points_record
+                 WHERE points &gt; 0 AND DATE(create_time) = #{statDate}),
+               (SELECT IFNULL(ABS(SUM(points)), 0) FROM member_points_record
+                 WHERE points &lt; 0 AND DATE(create_time) = #{statDate})
+        ON DUPLICATE KEY UPDATE
+            total_order_count  = VALUES(total_order_count),
+            total_amount       = VALUES(total_amount),
+            total_member_count = VALUES(total_member_count),
+            new_member_count   = VALUES(new_member_count),
+            points_issued      = VALUES(points_issued),
+            points_consumed    = VALUES(points_consumed)
+    </insert>
+
+</mapper>

@@ -1,0 +1,61 @@
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# VSCode（保留项目级 .vscode/launch.json，仅忽略用户级）
+.vscode/
+
+# 构建产物
+target/
+*.class
+*.jar
+*.war
+
+# Maven Wrapper 本体（提交 mvnw 可选；本地缓存目录不入库）
+.mvn/wrapper/maven-wrapper.jar
+
+# JVM 崩溃日志
+hs_err_pid*.log
+replay_pid*.log
+
+# 运行时日志
+*.log
+logs/
+
+# 操作系统
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 临时文件
+*.tmp
+*.bak
+*.swp
+
+# 本地验证码/登录测试产物
+admin_*.json
+admin_*.png
+member_*.json
+member_*.png
+captcha_*.json
+captcha_*.png
+c.json
+
+# node_modules 与前端构建产物
+node_modules/
+frontend/node_modules/
+frontend/dist/
+dist/
+.vite/
+
+# 备份文件（项目里有 RoleController.java.orig、system.js.orig）
+*.orig
+
+# 编译输出转储（javac_opts.txt 76K / javac_opts2.txt 43K）
+javac_opts.txt
+javac_opts2.txt
+# 开发过程手动备份(带中文后缀)与数据库导出中间产物
+*.bak_*
+sam_ai_lab_full.sql
