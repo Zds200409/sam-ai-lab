@@ -16,7 +16,7 @@
 | Layer | State | Notes |
 | --- | --- | --- |
 | Membership management system | Done | Full CRUD backend, RBAC, member portal, order and points logic |
-| AI service desk | Working | Spring AI 1.0.0 wired to DeepSeek over the OpenAI-compatible protocol; synchronous Q&A, SSE streaming and failure fallback all verified |
+| AI service desk | Working | Spring AI 1.0.0 wired to DeepSeek over the OpenAI-compatible protocol; multi-turn memory, SSE streaming and failure fallback all verified |
 | Grounded Q&A (RAG) | In development | `pgvector` retrieval layer next, see Roadmap |
 | Tool calling | Planned | Model will invoke real business APIs instead of guessing live data |
 | Observability layer | Planned | `ai_chat_log` schema designed, implementation pending |
@@ -27,6 +27,8 @@ Verified behaviour of the current AI layer:
 | --- | --- |
 | Synchronous Q&A | HTTP 200, ~1.7 s round trip including model latency |
 | Streaming (SSE) | Token-level output confirmed over `text/event-stream` |
+| Multi-turn context | Third turn correctly recalled a member tier stated in the first turn |
+| Session isolation | The same question under a different `conversationId` knew nothing about the first session |
 | Empty input | HTTP 400 with a validation message, no model call issued |
 | Invalid API key | HTTP 500 with a user-facing fallback message, service stays up, full exception stack logged |
 | Model timeout / unreachable | HTTP 503 fallback, request tracing preserved |
@@ -193,21 +195,63 @@ spring:
         max-retries: 2
 ```
 
-Set the key before starting:
+Set the key before starting. Two ways, pick one.
+
+**Option A, local config file (recommended).** Create
+`src/main/resources/application-local.yml`:
+
+```yaml
+spring:
+  ai:
+    openai:
+      api-key: sk-xxxx
+```
+
+Then confirm `application.yml` activates the profile:
+
+```yaml
+spring:
+  profiles:
+    active: dev,local
+```
+
+`application-local.yml` is listed in `.gitignore`, so the key never reaches the
+repository. A profile file that does not exist is simply skipped, so other
+developers can clone and run without it as long as they supply a key some
+other way.
+
+**Option B, environment variable.** Valid for the current shell only:
 
 ```bash
 export DEEPSEEK_API_KEY=sk-xxxx        # Windows: $env:DEEPSEEK_API_KEY="sk-xxxx"
 ```
 
-Two endpoints are exposed:
+The application refuses to start when no key is present. `OpenAiChatModel` is a
+singleton bean created during startup, and a blank key throws
+`OpenAI API key must be set` before any endpoint becomes reachable.
+
+Two endpoints are exposed. Both accept an optional `conversationId`. Calls
+sharing the same value share conversation history, different values stay
+isolated.
 
 ```bash
-# synchronous
-curl "http://localhost:8081/api/ai/chat?question=how many points do I earn"
+# synchronous, multi-turn
+curl "http://localhost:8081/api/ai/chat?question=my+tier+is+premium&conversationId=t1"
+curl "http://localhost:8081/api/ai/chat?question=what+benefits+does+that+give+me&conversationId=t1"
 
-# streaming (SSE)
-curl -N "http://localhost:8081/api/ai/chat/stream?question=what tiers exist"
+# streaming (SSE), token by token
+curl -N "http://localhost:8081/api/ai/chat/stream?question=what+tiers+exist&conversationId=t1"
 ```
+
+History is kept in `MessageWindowChatMemory` with a 20-message window, roughly
+10 turns. It is in-process only: history is lost on restart and not shared
+across instances. Swapping in `JdbcChatMemoryRepository` or the Redis
+implementation is a small change in `AiMemoryConfig`, with no business code
+touched.
+
+A minimal chat UI ships at `http://localhost:8081/ai-chat.html`. Plain HTML with
+no build step, it renders the SSE stream token by token and generates a fresh
+conversation ID per session.
 
 For a fully local setup, point the client at Ollama instead. No external
 network dependency, no per-token cost.
