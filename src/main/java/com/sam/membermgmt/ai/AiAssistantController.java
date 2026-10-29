@@ -27,13 +27,18 @@ public class AiAssistantController {
 
     @Operation(summary = "同步问答", description = "调用大模型同步返回答案，模型不可用时返回降级提示")
     @GetMapping("/chat")
-    public Result<String> chat(@RequestParam String question) {
-        return aiAssistantService.chat(question);
+    public Result<String> chat(@RequestParam String question,
+                               @RequestParam(required = false) String conversationId) {
+        return aiAssistantService.chat(question, conversationId);
+
     }
+
 
     @Operation(summary = "流式问答", description = "SSE 流式返回，逐字输出模型响应")
     @GetMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<String> chatStream(@RequestParam String question) {
-        return aiAssistantService.chatStream(question);
+    public Flux<String> chatStream(@RequestParam String question,
+                                   @RequestParam(required = false) String conversationId) { // ★ 新增参数
+        return aiAssistantService.chatStream(question, conversationId);                        // ★ 多传一个值
     }
+
 }
