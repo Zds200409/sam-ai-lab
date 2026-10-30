@@ -36,6 +36,27 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+
+            <!--
+                Spring Boot 3.4 / Spring Framework 6.2 移除了 ControllerAdviceBean(Object) 构造器，
+                springdoc 2.3.0（knife4j 4.5.0 的默认传递依赖）仍在调用它，
+                打开 /doc.html 会抛 NoSuchMethodError。2.7.0 改用了 findAnnotatedBeans 静态工厂。
+            -->
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+                <version>2.7.0</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webmvc-api</artifactId>
+                <version>2.7.0</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-common</artifactId>
+                <version>2.7.0</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -72,11 +93,23 @@
             <version>${mybatis-plus.version}</version>
         </dependency>
 
-        <!-- Knife4j (Spring Boot 3 专用 jakarta 版本) -->
+        <!--
+            Knife4j 只保留前端 UI 资源（doc.html 页面本身）。
+            它的 Java starter 编译时依赖 springdoc 2.3.0 的 List 型 getGroupConfigs()，
+            而 Spring Boot 3.4 需要 springdoc 2.7.0（返回 Set），两者二进制不兼容，
+            所以这里不走 starter，接口文档由下面的 springdoc 提供。
+        -->
         <dependency>
             <groupId>com.github.xiaoymin</groupId>
-            <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
+            <artifactId>knife4j-openapi3-ui</artifactId>
             <version>${knife4j.version}</version>
+        </dependency>
+
+        <!-- OpenAPI 规范生成 + 原生 Swagger UI，与 Spring Boot 3.4 兼容 -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>2.7.0</version>
         </dependency>
 
         <!-- JWT -->
@@ -136,6 +169,20 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+
+
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-vector-store</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-advisors-vector-store</artifactId>
+        </dependency>
+
+
+
     </dependencies>
 
     <build>

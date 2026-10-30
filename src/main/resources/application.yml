@@ -41,6 +41,9 @@ spring:
         read-timeout: 60s
         max-retries: 2
 
+
+
+
 mybatis-plus:
   configuration:
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
@@ -120,5 +123,10 @@ sam:
       【兜底】
       只有在问题属于山姆业务范围内、但你确实缺少准确数据时，才说"这个我不确定"，并告诉用户去哪里查。
       如果问题本身不在服务范围内，直接说明范围就好，不要说不确定。拒绝是确定的判断，不需要含糊。
+
+
+ 
+
+  
 
 
