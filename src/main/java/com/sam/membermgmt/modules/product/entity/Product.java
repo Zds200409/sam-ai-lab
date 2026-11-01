@@ -25,6 +25,12 @@ public class Product extends BaseEntity {
     private String description;
     private Integer status;
 
+    /**
+     * 是否不参与会员折扣：0 参与，1 不参与。
+     * 礼品卡、烟酒、特价商品打折会破坏价格体系，单独标记比按分类硬编码更灵活。
+     */
+    private Integer discountExcluded;
+
     /** 逻辑删除标记：0 未删除，1 已删除（查询自动过滤） */
     @TableLogic
     private Integer deleted;

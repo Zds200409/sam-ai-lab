@@ -40,6 +40,12 @@ import java.util.Map;
 @Service
 public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements IOrderService {
 
+    /** 满额免配送费门槛：线上订单商品折后金额达到该值免收配送费 */
+    private static final BigDecimal DELIVERY_FREE_THRESHOLD = new BigDecimal("180.00");
+
+    /** 未达门槛时收取的配送费 */
+    private static final BigDecimal DELIVERY_FEE = new BigDecimal("15.00");
+
     @Autowired
     private OrderMapper orderMapper;
 
@@ -92,6 +98,8 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
 
         // 3. 校验商品并计算金额
         BigDecimal totalAmount = BigDecimal.ZERO;
+        // 可参与会员折扣的商品小计。礼品卡、烟酒、特价商品不计入，避免破坏价格体系
+        BigDecimal discountableAmount = BigDecimal.ZERO;
         List<OrderItem> orderItems = new ArrayList<>();
 
         for (Map.Entry<Long, Integer> entry : aggregated.entrySet()) {
@@ -110,6 +118,9 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
 
             BigDecimal subtotal = product.getPrice().multiply(BigDecimal.valueOf(qty));
             totalAmount = totalAmount.add(subtotal);
+            if (!isDiscountExcluded(product)) {
+                discountableAmount = discountableAmount.add(subtotal);
+            }
 
             OrderItem item = new OrderItem();
             item.setProductId(product.getId());
@@ -121,16 +132,22 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             orderItems.add(item);
         }
 
-        // 3. 计算折扣
+        // 4. 计算折扣：只对可折扣商品计算，礼品卡、烟酒、特价商品按原价结算
         BigDecimal discountRate = level.getDiscountRate();
-        BigDecimal discountAmount = totalAmount.multiply(
+        BigDecimal discountAmount = discountableAmount.multiply(
                 BigDecimal.ONE.subtract(discountRate)).setScale(2, RoundingMode.HALF_UP);
         BigDecimal actualAmount = totalAmount.subtract(discountAmount);
 
-        // 4. 计算积分
+        // 5. 计算配送费：仅线上订单收取，按商品折后金额判断是否满额免运费
+        BigDecimal deliveryFee = BigDecimal.ZERO;
+        if (operatorId == null && actualAmount.compareTo(DELIVERY_FREE_THRESHOLD) < 0) {
+            deliveryFee = DELIVERY_FEE;
+        }
+
+        // 6. 计算积分：按商品折后金额计算，配送费不计入积分基数
         int pointsEarned = actualAmount.multiply(level.getPointsRate()).intValue();
 
-        // 5. 创建订单
+        // 7. 创建订单
         Order order = new Order();
         order.setOrderNo(orderNoGenerator.generate());
         order.setMemberId(member.getId());
@@ -139,6 +156,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         order.setTotalAmount(totalAmount);
         order.setDiscountAmount(discountAmount);
         order.setActualAmount(actualAmount);
+        order.setDeliveryFee(deliveryFee);
         order.setPointsEarned(pointsEarned);
         order.setPaymentMethod(dto.getPaymentMethod());
         order.setOperatorId(operatorId);
@@ -207,6 +225,8 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         vo.setTotalAmount(totalAmount);
         vo.setDiscountAmount(discountAmount);
         vo.setActualAmount(actualAmount);
+        vo.setDeliveryFee(deliveryFee);
+        vo.setPayableAmount(actualAmount.add(deliveryFee));
         vo.setPointsEarned(pointsEarned);
         vo.setPaymentMethod(dto.getPaymentMethod());
         vo.setItems(orderItems);
@@ -291,5 +311,14 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         }
         order.setStatus(OrderStatusEnum.REFUND_REJECTED.getCode());
         orderMapper.updateById(order);
+    }
+
+    /**
+     * 判断商品是否不参与会员折扣。
+     * 礼品卡、烟酒、特价商品打折会打穿价格体系，所以按商品维度标记，
+     * 而不是按分类硬编码——同分类下也可能有参与折扣的常规商品。
+     */
+    private boolean isDiscountExcluded(Product product) {
+        return product.getDiscountExcluded() != null && product.getDiscountExcluded() == 1;
     }
 }

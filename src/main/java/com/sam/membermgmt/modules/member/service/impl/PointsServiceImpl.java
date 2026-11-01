@@ -94,4 +94,35 @@ public class PointsServiceImpl extends ServiceImpl<MemberPointsRecordMapper, Mem
         record.setDescription(description);
         pointsRecordMapper.insert(record);
     }
+
+    /**
+     * 积分过期作废。
+     * 不扣减 accumulatedPoints——那个字段表示历史累计获得，兑换消耗同样不减，
+     * 它记录的是「一共赚过多少」，不随支出变化。
+     */
+    @Override
+    @Transactional
+    public void expirePoints(Long memberId, int points, String description) {
+        Member member = memberMapper.selectById(memberId);
+        if (member == null) {
+            throw new BusinessException("会员不存在");
+        }
+        int balanceBefore = member.getTotalPoints();
+        int deduct = Math.min(points, balanceBefore);
+        if (deduct <= 0) {
+            return;
+        }
+        int balanceAfter = balanceBefore - deduct;
+        member.setTotalPoints(balanceAfter);
+        memberMapper.updateById(member);
+
+        MemberPointsRecord record = new MemberPointsRecord();
+        record.setMemberId(memberId);
+        record.setPoints(-deduct);
+        record.setType(4);
+        record.setBalanceBefore(balanceBefore);
+        record.setBalanceAfter(balanceAfter);
+        record.setDescription(description);
+        pointsRecordMapper.insert(record);
+    }
 }
