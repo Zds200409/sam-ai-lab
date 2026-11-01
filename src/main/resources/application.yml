@@ -41,6 +41,18 @@ spring:
         read-timeout: 60s
         max-retries: 2
 
+    chat:
+      memory:
+        repository:
+          jdbc:
+            initialize-schema: never
+
+
+
+
+
+
+
 
 
 
