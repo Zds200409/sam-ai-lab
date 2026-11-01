@@ -1,11 +1,15 @@
-
 package com.sam.membermgmt.ai;
 
 import com.sam.membermgmt.common.Result;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;  // ★ 新增
-import org.springframework.ai.chat.memory.ChatMemory;                       // ★ 新增
+import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
+import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor;
+import org.springframework.ai.rag.generation.augmentation.ContextualQueryAugmenter;
+import org.springframework.ai.rag.preretrieval.query.transformation.CompressionQueryTransformer;
+import org.springframework.ai.rag.retrieval.search.VectorStoreDocumentRetriever;
+import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.ResourceAccessException;
@@ -18,40 +22,66 @@ import java.time.Instant;
 @Service
 public class AiAssistantService {
 
-    private static final String DEFAULT_CONVERSATION_ID = "demo";           // ★ 新增
+    private static final String DEFAULT_CONVERSATION_ID = "demo";
 
     private final ChatClient chatClient;
     private final Duration timeout;
     private final String systemPrompt;
 
     public AiAssistantService(ChatClient.Builder chatClientBuilder,
-                              ChatMemory chatMemory,                         // ★ 新增参数
+                              ChatMemory chatMemory,
+                              VectorStore vectorStore,
                               @Value("${sam.ai.timeout-seconds:30}") long timeoutSeconds,
                               @Value("${sam.ai.system-prompt:}") String systemPrompt) {
-        this.chatClient = chatClientBuilder
-                .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build())  // ★ 新增
+
+        // 查询改写用的 builder 必须独立。它不能带上后面的记忆和检索 advisor，
+        // 否则改写器调用时会再次触发自身，形成递归。
+        ChatClient.Builder compressorBuilder = chatClientBuilder.clone();
+
+        RetrievalAugmentationAdvisor ragAdvisor = RetrievalAugmentationAdvisor.builder()
+                .queryTransformers(
+                        CompressionQueryTransformer.builder()
+                                .chatClientBuilder(compressorBuilder)
+                                .build())
+                .documentRetriever(
+                        VectorStoreDocumentRetriever.builder()
+                                .vectorStore(vectorStore)
+                                .similarityThreshold(0.5)
+                                .topK(3)
+                                .build())
+                .queryAugmenter(
+                        ContextualQueryAugmenter.builder()
+                                .allowEmptyContext(false)
+                                .build())
                 .build();
+
+        this.chatClient = chatClientBuilder
+                .defaultAdvisors(
+                        MessageChatMemoryAdvisor.builder(chatMemory).build(),
+                        ragAdvisor)
+                .build();
+
         this.timeout = Duration.ofSeconds(timeoutSeconds);
         this.systemPrompt = systemPrompt;
     }
 
-    private String resolveConversationId(String conversationId) {            // ★ 新增方法
+    private String resolveConversationId(String conversationId) {
         return (conversationId == null || conversationId.isBlank())
                 ? DEFAULT_CONVERSATION_ID
                 : conversationId.trim();
     }
 
-    public Result<String> chat(String question, String conversationId) {     // ★ 加第二个参数
+    public Result<String> chat(String question, String conversationId) {
         if (question == null || question.trim().isEmpty()) {
             return Result.error(400, "问题不能为空");
         }
-        String cid = resolveConversationId(conversationId);                  // ★ 新增
+        String cid = resolveConversationId(conversationId);
         long start = System.currentTimeMillis();
         try {
             String answer = chatClient.prompt()
                     .system(systemPrompt)
                     .user(question)
-                    .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, cid)) // ★ 新增
+                    .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, cid))
                     .call()
                     .content();
             long cost = System.currentTimeMillis() - start;
@@ -69,7 +99,7 @@ public class AiAssistantService {
         }
     }
 
-    public Flux<String> chatStream(String question, String conversationId) { // ★ 加第二个参数
+    public Flux<String> chatStream(String question, String conversationId) {
         if (question == null || question.trim().isEmpty()) {
             return Flux.just("[错误] 问题不能为空");
         }
@@ -77,7 +107,7 @@ public class AiAssistantService {
                 .system(systemPrompt)
                 .user(question)
                 .advisors(a -> a.param(ChatMemory.CONVERSATION_ID,
-                        resolveConversationId(conversationId)))              // ★ 新增
+                        resolveConversationId(conversationId)))
                 .stream()
                 .content()
                 .onErrorResume(e -> {
@@ -86,4 +116,3 @@ public class AiAssistantService {
                 });
     }
 }
-

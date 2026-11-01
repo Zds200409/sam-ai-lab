@@ -72,6 +72,10 @@ build.ps1
 run-app.ps1
 mvnw.bat
 
+# 向量库快照（reindex 生成，可随时重建）
+data/
+
+
 # 本地密钥配置（严禁入库）
 .env
 application-local.yml
