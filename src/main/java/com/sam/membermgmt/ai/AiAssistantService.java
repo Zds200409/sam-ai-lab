@@ -1,5 +1,6 @@
 package com.sam.membermgmt.ai;
 
+import com.sam.membermgmt.ai.tool.MemberToolService;
 import com.sam.membermgmt.common.Result;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -31,11 +32,12 @@ public class AiAssistantService {
     public AiAssistantService(ChatClient.Builder chatClientBuilder,
                               ChatMemory chatMemory,
                               VectorStore vectorStore,
+                              MemberToolService memberToolService,
                               @Value("${sam.ai.timeout-seconds:30}") long timeoutSeconds,
                               @Value("${sam.ai.system-prompt:}") String systemPrompt) {
 
-        // 查询改写用的 builder 必须独立。它不能带上后面的记忆和检索 advisor，
-        // 否则改写器调用时会再次触发自身，形成递归。
+        // 查询改写用的 builder 必须独立。它不能带上后面的记忆、检索 advisor 和查询工具，
+        // 否则改写器调用时会再次触发自身（递归），或者拿着改写用的短句去查会员数据。
         ChatClient.Builder compressorBuilder = chatClientBuilder.clone();
 
         RetrievalAugmentationAdvisor ragAdvisor = RetrievalAugmentationAdvisor.builder()
@@ -51,7 +53,13 @@ public class AiAssistantService {
                                 .build())
                 .queryAugmenter(
                         ContextualQueryAugmenter.builder()
-                                .allowEmptyContext(false)
+                                // 检索为空时允许原样把问题交给模型，而不是直接拒答。
+                                // 原因有两个：一是账户数据类问题本来就检索不到，要靠工具查；
+                                // 二是 allowEmptyContext(false) 走的是 emptyContextPromptTemplate.render()，
+                                // 该方法不接收模板变量，自定义模板里只要写了 {query} 就会抛
+                                // "Not all variables were replaced"，而且原问题会被整段替换掉。
+                                // 拒答的约束交给 system-prompt 里的规则，由评估集验证。
+                                .allowEmptyContext(true)
                                 .build())
                 .build();
 
@@ -59,6 +67,7 @@ public class AiAssistantService {
                 .defaultAdvisors(
                         MessageChatMemoryAdvisor.builder(chatMemory).build(),
                         ragAdvisor)
+                .defaultTools(memberToolService)
                 .build();
 
         this.timeout = Duration.ofSeconds(timeoutSeconds);

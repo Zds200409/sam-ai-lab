@@ -1,10 +1,8 @@
 package com.sam.membermgmt.config;
 
-
-
+import com.sam.membermgmt.ai.rag.ResettableVectorStore;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.ai.vectorstore.SimpleVectorStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,8 +17,8 @@ public class VectorStoreConfig {
     private String storePath;
 
     @Bean
-    public SimpleVectorStore vectorStore(EmbeddingModel embeddingModel) {
-        SimpleVectorStore store = SimpleVectorStore.builder(embeddingModel).build();
+    public ResettableVectorStore vectorStore(EmbeddingModel embeddingModel) {
+        ResettableVectorStore store = ResettableVectorStore.create(embeddingModel);
 
         File file = new File(storePath);
         if (file.exists() && file.length() > 0) {
@@ -36,5 +34,3 @@ public class VectorStoreConfig {
         return store;
     }
 }
-
-

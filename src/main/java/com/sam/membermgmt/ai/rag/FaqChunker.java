@@ -44,6 +44,7 @@ public class FaqChunker {
 
             Map<String, Object> meta = new HashMap<>();
             meta.put("title", title);
+            meta.put("doc_type", "faq");
             meta.put("category", "");
             meta.put("source", "");
 
@@ -73,8 +74,16 @@ public class FaqChunker {
             String text = title + "\n" + content.toString().trim();
             if (text.length() < title.length() + MIN_BODY_LENGTH) continue;
 
-            out.add(new Document(text, meta));
+            out.add(new Document(buildId(title), text, meta));
         }
         return out;
+    }
+
+    /**
+     * 用标题做文档 id。id 稳定，重复 reindex 时同 id 会被覆盖而不是追加，
+     * 这是 reindex 幂等的前提之一（另一个前提是写入前清空历史文档）。
+     */
+    private String buildId(String title) {
+        return "faq-" + title;
     }
 }
