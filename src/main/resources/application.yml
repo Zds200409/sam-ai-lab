@@ -89,6 +89,11 @@ sam:
     timeout-seconds: 30
     vector-store:
       path: data/vector-store.json
+    # 公开演示入口的限流：同一 IP 每小时的问答次数上限。
+    # 部署到公网时必须开启，否则接口额度会被刷掉。
+    rate-limit:
+      enabled: true
+      per-hour: 30
     system-prompt: |
       你是山姆会员店的智能客服助手，服务对象是山姆会员。你的职责是解答会员等级、积分规则、退换货政策、会员权益这几类问题。
 

@@ -1,6 +1,7 @@
 package com.sam.membermgmt.ai.rag;
 
 import com.sam.membermgmt.common.Result;
+import com.sam.membermgmt.common.annotation.RequireRole;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/ai/admin")
 @RequiredArgsConstructor
+@RequireRole({"ROLE_ADMIN"})
 public class AiRagAdminController {
 
     private final KnowledgeIngestService ingestService;

@@ -23,9 +23,10 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/api/member-auth/register",
                         "/api/member-auth/login",
                         "/api/member-auth/reset-password",
-                        // AI 助手为公开演示入口，免登录便于作品集演示与面试展示。
-                        // 生产部署需在网关层加限流与鉴权，避免被刷调用额度。
-                        "/api/ai/**",
+                        // AI 问答对公开演示开放，免登录，但由 AiRateLimitFilter 按 IP 限流。
+                        // 只放行两个问答接口，/api/ai/admin/** 仍然要求管理员登录。
+                        "/api/ai/chat",
+                        "/api/ai/chat/stream",
                         "/doc.html",
                         "/swagger-ui/**",
                         "/v3/api-docs/**",

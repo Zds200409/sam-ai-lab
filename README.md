@@ -298,8 +298,12 @@ After editing either file, reindex through the admin endpoint. Ingestion clears
 the store first and rewrites the snapshot, so running it twice leaves 65
 documents, not 130.
 
+Reindexing costs one embedding call per chunk, so the admin endpoints sit behind
+the normal JWT plus an admin role check rather than the public whitelist:
+
 ```bash
-curl -X POST "http://localhost:8081/api/ai/admin/reindex"
+curl -X POST "http://localhost:8081/api/ai/admin/reindex" \
+  -H "Authorization: Bearer <admin token>"
 ```
 
 The vector store is `SimpleVectorStore`, held in memory and snapshotted to
@@ -307,6 +311,33 @@ The vector store is `SimpleVectorStore`, held in memory and snapshotted to
 restarting does not cost an embedding round trip. Two consequences are worth
 stating plainly: the snapshot is not shared between instances, and a stale
 snapshot silently serves old policy until reindex runs.
+
+### Access control
+
+The chat endpoints are deliberately open. A reviewer should be able to click a
+link and ask a question without registering, and requiring a login for a
+portfolio demo creates a worse experience than it protects anything.
+
+Open does not mean unguarded. Every call to `/api/ai/chat` spends real API
+credit, so a filter limits each IP to 30 questions per hour and returns HTTP 429
+with a `Retry-After` header past that. The limit is configurable:
+
+```yaml
+sam:
+  ai:
+    rate-limit:
+      enabled: true
+      per-hour: 30
+```
+
+The counters live in process memory, which is enough for a single instance and
+honest about its limits: multi-instance deployments count per instance, and a
+restart resets the window. A real quota system belongs in Redis or at the
+gateway, and that is what the Roadmap entry refers to.
+
+Admin endpoints under `/api/ai/admin/**` are outside the whitelist and require a
+JWT with the admin role, because reindexing triggers one embedding call per
+chunk and is worth protecting even on a demo deployment.
 
 ---
 
@@ -344,17 +375,24 @@ assistant, because users trust it.
 
 ## Demo
 
-Run it locally and open `http://localhost:8081/ai-chat.html`. Three questions
-show the whole pipeline in under a minute:
+Run it locally and open `http://localhost:8081/ai-chat.html`.
+
+| Retrieved answer with a source line | Live account data through a tool |
+| --- | --- |
+| ![RAG answer with source](docs/demo/01-rag-source.png) | ![Tool calling for points balance](docs/demo/02-tool-calling.png) |
+
+![Out of scope question refused](docs/demo/03-scope-refusal.png)
+
+Three questions cover the whole pipeline in under a minute:
 
 | Ask | What you should see |
 | --- | --- |
-| What discount does a premium tier get? | Answer retrieved from the charter, ending with a source line, no tool call |
-| What is my points balance? | The model asks for a phone number first |
+| What discount does a premium tier get, and what is excluded? | Answer retrieved from the charter, ending with a source line, no tool call |
 | What is my points balance, phone 18827578719 | Live value from MySQL, not a guess |
+| Should I buy the company's stock? | Refusal that restates the supported scope |
 
-The second question is the one worth watching. Before tool calling was wired,
-the assistant answered that it could not see account data. It now asks for the
+The middle one is the one worth watching. Before tool calling was wired, the
+assistant answered that it could not see account data. It now asks for the
 identifier instead of refusing, which is the behaviour a real service desk needs.
 
 Screenshots and a recorded walkthrough go in `docs/demo/` once captured.
@@ -413,10 +451,12 @@ python eval/run_eval.py --tag my-change
 - [x] Modular RAG advisor with query compression for follow-up questions
 - [x] Tool calling against member tier, points balance and recent orders
 - [x] Evaluation set with regression checks
+- [x] Per-IP rate limiting on the public chat endpoints
 - [ ] Replace keyword grading with model-based or human grading
 - [ ] Graceful degradation tiers and the `ai_chat_log` observability table
 - [ ] Cost accounting per conversation and a monthly budget estimate
 - [ ] Public deployment, demo video, live metrics
+- [ ] Shared quota across instances, once there is more than one
 - [ ] Hybrid retrieval plus rerank, once the corpus outgrows simple similarity
 
 ---
