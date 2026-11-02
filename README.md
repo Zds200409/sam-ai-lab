@@ -1,13 +1,14 @@
 # Sam AI Assistant
 
 > A membership management system upgraded with an LLM-powered service desk.
-> Java + Spring Boot 2.7 + Spring AI, designed around retrieval-augmented generation,
+> Java + Spring Boot 3.4 + Spring AI, designed around retrieval-augmented generation,
 > tool calling into real business APIs, streaming responses, graceful degradation and
-> end-to-end request tracing.
+> an evaluation harness that runs on every prompt or model change.
 
-[![Status](https://img.shields.io/badge/status-AI%20layer%20in%20development-orange)](https://github.com/Zds200409/sam-ai-lab)
+[![Status](https://img.shields.io/badge/status-RAG%20%2B%20tool%20calling%20working-green)](https://github.com/Zds200409/sam-ai-lab)
 [![Java](https://img.shields.io/badge/java-17-blue)](https://adoptium.net/)
-[![Spring Boot](https://img.io/badge/spring--boot-2.7.18-brightgreen)](https://spring.io/projects/spring-boot)
+[![Spring Boot](https://img.shields.io/badge/spring--boot-3.4.5-brightgreen)](https://spring.io/projects/spring-boot)
+[![Spring AI](https://img.shields.io/badge/spring--ai-1.0.0-6DB33F)](https://docs.spring.io/spring-ai/reference/)
 
 ---
 
@@ -17,8 +18,9 @@
 | --- | --- | --- |
 | Membership management system | Done | Full CRUD backend, RBAC, member portal, order and points logic |
 | AI service desk | Working | Spring AI 1.0.0 wired to DeepSeek over the OpenAI-compatible protocol; multi-turn memory, SSE streaming and failure fallback all verified |
-| Grounded Q&A (RAG) | In development | `pgvector` retrieval layer next, see Roadmap |
-| Tool calling | Planned | Model will invoke real business APIs instead of guessing live data |
+| Grounded Q&A (RAG) | Working | 65 chunks from two document families, retrieved through a modular RAG advisor with query compression |
+| Tool calling | Working | Three read-only tools resolve tier, points and recent orders from MySQL at request time |
+| Evaluation harness | Working | 55 graded questions across 7 categories, baseline 68% → 100% after grounding and tool access |
 | Observability layer | Planned | `ai_chat_log` schema designed, implementation pending |
 
 Verified behaviour of the current AI layer:
@@ -33,10 +35,9 @@ Verified behaviour of the current AI layer:
 | Invalid API key | HTTP 500 with a user-facing fallback message, service stays up, full exception stack logged |
 | Model timeout / unreachable | HTTP 503 fallback, request tracing preserved |
 
-This repository is a working portfolio project. The AI layer is being built in
-public, commit by commit, and the Roadmap section is kept honest with the actual
-progress. Numbers marked `TBD` are placeholders waiting on real measurements,
-never invented values.
+This repository is a working portfolio project. The AI layer is built in
+public, commit by commit, and the Roadmap section reflects actual progress
+rather than intent.
 
 ---
 
@@ -66,10 +67,10 @@ guess, it calls the real business API and reports what it actually returned.
 
 | Capability | Behaviour | Engineering reason |
 | --- | --- | --- |
-| Grounded Q&A (RAG) | FAQ and policy documents are chunked, embedded and stored in `pgvector`; answers are generated from retrieved chunks with citations | Keeps responses traceable to a source, limits hallucination to a measurable surface |
-| Tool calling | The model can invoke real business APIs, e.g. read a member tier, points balance or order state | Live data must come from the database, never from the model's imagination |
+| Grounded Q&A (RAG) | FAQ entries and charter clauses are chunked, embedded and retrieved; answers are generated from the retrieved chunks with a source label | Keeps responses traceable to a source, limits hallucination to a measurable surface |
+| Tool calling | The model invokes read-only business lookups for tier, points balance and recent orders, keyed by phone number | Live data must come from the database, never from the model's imagination |
 | Streaming (SSE) | Token-level streaming to the client | Perceived latency drops from seconds to sub-second, which changes whether the feature gets used at all |
-| Session memory | Multi-turn context kept in Redis, isolated per conversation | Real support questions are multi-step, single-shot memory feels broken |
+| Session memory | Multi-turn context stored in MySQL, isolated per conversation | Real support questions are multi-step, single-shot memory feels broken |
 | Graceful degradation | Three tiers: normal answer, low-confidence handoff, model-failure handoff | A probability system must fail predictably; an unanswered ticket is recoverable, a confidently wrong answer is not |
 | Observability | Every request logged with retrieved document IDs, answer, handoff flag, token usage and latency | Without logs there is no way to measure hit rate or diagnose a bad answer |
 
@@ -78,33 +79,41 @@ guess, it calls the real business API and reports what it actually returned.
 ## Architecture
 
 ```
-                  ┌──────────────┐
-   Client  ──────▶│ ChatController│◀─── SSE stream
-                  └──────┬───────┘
-                         │
-                  ┌──────▼───────────────┐
-                  │      ChatService     │
-                  │  prompt assembly +   │
-                  │  conversation memory │
+                  ┌──────────────────┐
+   Client  ──────▶│ AiAssistantCtrl  │◀─── SSE stream
+                  └────────┬─────────┘
+                           │
+                  ┌────────▼─────────────┐
+                  │  AiAssistantService  │
+                  │  ChatClient +        │
+                  │  advisor chain       │
                   └──┬────────┬───────┬──┘
                      │        │       │
         ┌────────────▼──┐  ┌──▼──────────────┐  ┌▼─────────────────┐
-        │   Retriever   │  │  ToolCalling    │  │  Fallback / Log  │
-        │ chunk + embed │  │ read-only APIs  │  │ handoff + tracing│
-        │ + top-k + rank│  └──────┬──────────┘  └──────┬──────────┘
+        │ Modular RAG   │  │  ToolCalling    │  │  Fallback / Log  │
+        │ compress +    │  │ read-only APIs  │  │ handoff + tracing│
+        │ retrieve + top-k│ └──────┬──────────┘  └──────┬──────────┘
         └────────┬──────┘         │                    │
                  │                │                    │
         ┌────────▼──────┐  ┌──────▼──────┐     ┌───────▼────────┐
-        │   pgvector    │  │ MySQL 8.x   │     │  ai_chat_log   │
-        │  (embeddings) │  │ (business)  │     │  (observability)│
+        │SimpleVectorSt.│  │ MySQL 8.x   │     │  ai_chat_log   │
+        │ + JSON snap.  │  │ (business + │     │  (observability)│
+        │ (embeddings)  │  │  chat mem.) │     │                │
         └───────────────┘  └─────────────┘     └────────────────┘
                      │
               ┌──────▼───────┐
               │  LLM provider│
               │ DeepSeek API │
-              │ Ollama local │
+              │SiliconFlow   │
+              │  (bge-m3)    │
               └──────────────┘
 ```
+
+Two model providers are in play and they are not interchangeable. DeepSeek
+serves chat completions and exposes no embedding endpoint, so embeddings come
+from SiliconFlow running `BAAI/bge-m3`. Both speak the OpenAI-compatible
+protocol, so they share one client class but need two configured instances,
+because Spring AI's `base-url` is global rather than per-call.
 
 The two halves are deliberately asymmetric. Retrieval and tool calling are
 read-only paths that touch production-like data, so they are the parts that get
@@ -118,12 +127,12 @@ client interface so the model can be swapped without touching business code.
 | Layer | Choice |
 | --- | --- |
 | Backend | Spring Boot 3.4.5, JDK 17, Jakarta EE namespace |
-| Persistence | MyBatis-Plus 3.5.7 (`mybatis-plus-spring-boot3-starter`), MySQL 8.x, pgvector for embeddings |
+| Persistence | MyBatis-Plus 3.5.7 (`mybatis-plus-spring-boot3-starter`), MySQL 8.x; chat memory and vector snapshot both persist to disk |
 | Security | JWT (jjwt 0.12.6), BCrypt, HandlerInterceptor, separate member / admin token spaces |
-| AI | Spring AI 1.0.0 (`spring-ai-starter-model-openai`), DeepSeek via OpenAI-compatible protocol, Ollama for local models, RAG over pgvector |
+| AI | Spring AI 1.0.0 (`spring-ai-starter-model-openai`), DeepSeek for chat, SiliconFlow `bge-m3` for embeddings, `SimpleVectorStore` with a JSON snapshot |
 | Frontend | Vue 3, Vite, Element Plus, Pinia, Vue Router, ECharts |
 | Observability | `ai_chat_log` table, Micrometer metrics, structured request tracing |
-| API docs | Knife4j 4.5.0 Jakarta (`/doc.html` when running) |
+| API docs | springdoc-openapi 2.7.0 + `knife4j-openapi3-ui` (`/doc.html` when running) |
 | Build | Maven Wrapper, npm |
 
 > **Why Spring Boot 3.4?** Spring AI 1.0 requires Spring Boot 3.4+. Staying on
@@ -193,7 +202,30 @@ spring:
         connect-timeout: 10s
         read-timeout: 60s
         max-retries: 2
+
+sam:
+  ai:
+    vector-store:
+      # snapshot path, relative to the working directory
+      path: data/vector-store.json
 ```
+
+Embeddings are a separate provider. DeepSeek has no embedding endpoint, so the
+retrieval side talks to SiliconFlow instead, and the key goes into the same
+profile file:
+
+```yaml
+sam:
+  ai:
+    embedding:
+      base-url: https://api.siliconflow.cn
+      api-key: ${SILICONFLOW_API_KEY}
+      model: BAAI/bge-m3
+```
+
+`bge-m3` outputs 1024 dimensions and rejects a `dimensions` parameter, so the
+request must not send one. Sending it returns `20015 The parameter is invalid`,
+which looks like an auth failure but is not.
 
 Set the key before starting. Two ways, pick one.
 
@@ -243,18 +275,38 @@ curl "http://localhost:8081/api/ai/chat?question=what+benefits+does+that+give+me
 curl -N "http://localhost:8081/api/ai/chat/stream?question=what+tiers+exist&conversationId=t1"
 ```
 
-History is kept in `MessageWindowChatMemory` with a 20-message window, roughly
-10 turns. It is in-process only: history is lost on restart and not shared
-across instances. Swapping in `JdbcChatMemoryRepository` or the Redis
-implementation is a small change in `AiMemoryConfig`, with no business code
-touched.
+History is persisted in MySQL through `JdbcChatMemoryRepository`, so a restart
+does not wipe the conversation and the table survives redeploys. Spring AI ships
+no MySQL schema script for this repository type, so the table is created
+manually and `initialize-schema` is set to `never`. Leaving it on `embedded`
+makes startup fail with `No schema scripts found ... schema-mysql.sql`.
 
 A minimal chat UI ships at `http://localhost:8081/ai-chat.html`. Plain HTML with
 no build step, it renders the SSE stream token by token and generates a fresh
 conversation ID per session.
 
-For a fully local setup, point the client at Ollama instead. No external
-network dependency, no per-token cost.
+### Knowledge base
+
+Two document families feed the same vector store:
+
+| File | Structure | Chunking | Chunks |
+| --- | --- | --- | --- |
+| `knowledge/sam-faq.md` | `## heading` per Q&A | one chunk per heading | 22 |
+| `knowledge/sam-charter.md` | `## chapter` / `### clause` | one chunk per clause, chapter carried as metadata | 43 |
+
+After editing either file, reindex through the admin endpoint. Ingestion clears
+the store first and rewrites the snapshot, so running it twice leaves 65
+documents, not 130.
+
+```bash
+curl -X POST "http://localhost:8081/api/ai/admin/reindex"
+```
+
+The vector store is `SimpleVectorStore`, held in memory and snapshotted to
+`data/vector-store.json` on ingest. On startup the snapshot is loaded back, so
+restarting does not cost an embedding round trip. Two consequences are worth
+stating plainly: the snapshot is not shared between instances, and a stale
+snapshot silently serves old policy until reindex runs.
 
 ---
 
@@ -263,15 +315,27 @@ network dependency, no per-token cost.
 The AI layer is only interesting if the rules are real, so the underlying
 system carries genuine business logic that the assistant has to respect.
 
-- Points: `P = A x r`, where `A` is the settled amount and `r` is the tier
-  points rate, floored
-- Discount: `D = T x (1 - d)`, where `T` is the item total and `d` is the tier
-  discount rate
-- Tier upgrade: triggered when cumulative spend crosses the next tier's
-  `min_consumption`, recorded in a change log
+- Points: `P = floor(A x r)`, where `A` is the goods amount actually paid and
+  `r` is the tier points rate. Delivery fees earn no points
+- Discount: `payable = goods x (1 - d) + delivery`, where `d` is the tier
+  discount rate. Gift cards, tobacco, alcohol and items flagged `discount_excluded`
+  settle at list price
+- Delivery: free above 180 on the goods amount, 15 otherwise. Not a tier benefit
+- Tier: both tiers are bought outright, there is no cumulative-spend threshold.
+  Upgrading from the entry tier costs the 420 annual-fee difference, prorated by
+  remaining validity
+- Expiry: points older than 90 days past their expiry date are swept to status
+  expired; the sweep does not touch the lifetime-earned counter
 - Transaction boundaries: settlement, refund and points adjustment are all
   `@Transactional(rollbackFor = Exception.class)`, atomically writing across
   orders, order items, stock and member balance
+
+The tier rule above is worth flagging because it used to be wrong in this
+repository. The table carried a `min_consumption` column that no entity mapped
+and no code read, yet it had leaked into the prompt, the FAQ and the charter,
+and the assistant dutifully told users they needed to spend 50,000 to join.
+A dead column is invisible at runtime and extremely convincing in generated
+prose, which is why the eval set pins this rule down explicitly.
 
 An assistant that cannot reproduce these rules with citations is worse than no
 assistant, because users trust it.
@@ -290,17 +354,46 @@ A 3-minute demo script is available in `docs/demo-script.md` (TBD).
 
 ---
 
-## Metrics
+## Evaluation
 
-Measurements are taken from `ai_chat_log` and are not yet populated. Placeholders
-are kept explicit so no number here is decorative.
+A 55-question set lives in `eval/questions.jsonl`, split by what is being
+tested rather than by topic. `eval/run_eval.py` drives the live endpoint and
+grades each answer against expected and forbidden phrases.
 
-| Metric | Value | How it is measured |
-| --- | --- | --- |
-| Grounded answer hit rate | TBD | Share of questions answered with a citation above the similarity threshold |
-| Human handoff rate | TBD | Share of questions routed to a human, from `ai_chat_log.handoff` |
-| Average response latency | TBD | Mean end-to-end latency from `ai_chat_log.latency_ms` |
-| Retrieval precision at k | TBD | Share of top-k chunks that contain the answering rule |
+| Category | What it probes | First run | Current |
+| --- | --- | --- | --- |
+| A Member tier | Fees, rates, discount per tier | 10/10 | 10/10 |
+| B Points | Accrual, timing, redemption, expiry | 10/10 | 10/10 |
+| C Returns | Windows, eligibility, refund path | 0/10 | 10/10 |
+| D Delivery | Fees, thresholds, timing | 2/6 | 6/6 |
+| E Out of scope | Must refuse rather than invent | 8/8 | 8/8 |
+| F Multi-turn | Follow-ups that depend on earlier turns | 4/6 | 6/6 |
+| G Tool calling | Live member data through the tools | not wired | 5/5 |
+| **Total** | | **34/50 (68%)** | **55/55** |
+
+The first run is the interesting one. All 16 failures were honest refusals, not
+invented answers: the model did not know the return window and said so. That is
+the right failure mode, and it moved the work from prompt tuning to knowledge
+coverage. Ingesting the membership charter alone took the set from 68% to 100%
+without touching a single prompt.
+
+Three caveats worth stating, because a 100% headline invites the wrong reading:
+
+- The grader matches keywords, so it measures "did the required rule appear"
+  rather than "is the answer good". It has produced false positives on
+  refusal sentences and false negatives on Chinese synonyms, both fixed by
+  widening the alternatives, which is a cost not a solution
+- One conversation answered correctly and then downgraded itself with
+  "I do not have precise information on that", which keyword grading cannot see
+- The set was written by the same person who wrote the knowledge base, so it
+  shares blind spots with it. It catches regressions, it does not prove
+  generalisation
+
+Reproduce with:
+
+```bash
+python eval/run_eval.py --tag my-change
+```
 
 ---
 
@@ -308,25 +401,32 @@ are kept explicit so no number here is decorative.
 
 - [x] Isolate the AI project environment (separate database, port, git history)
 - [x] Baseline system running and verified on port 8081
-- [ ] Spring AI client wired to DeepSeek and Ollama, first streaming chat endpoint
-- [ ] RAG pipeline: chunking, embedding, `pgvector` storage, top-k retrieval, rerank
-- [ ] Tool calling against member tier, points balance and order status
+- [x] Spring AI client wired to DeepSeek, streaming chat endpoint
+- [x] RAG pipeline: chunking, embedding, vector storage, similarity retrieval
+- [x] Modular RAG advisor with query compression for follow-up questions
+- [x] Tool calling against member tier, points balance and recent orders
+- [x] Evaluation set with regression checks
+- [ ] Replace keyword grading with model-based or human grading
 - [ ] Graceful degradation tiers and the `ai_chat_log` observability table
-- [ ] Evaluation set with regression checks on every prompt or model change
-- [ ] Deployment, demo video, public metrics
+- [ ] Cost accounting per conversation and a monthly budget estimate
+- [ ] Public deployment, demo video, live metrics
+- [ ] Hybrid retrieval plus rerank, once the corpus outgrows simple similarity
 
 ---
 
 ## Notes
 
-- The membership management base is a personal graduation project. The AI
-  service desk layer, its architecture and all AI-related code are original
-  work built for this portfolio.
+- The membership management base is an earlier personal project. The AI service
+  desk layer, its architecture and all AI-related code are original work built
+  for this repository.
 - The `ai_chat_log` schema and the retrieval design were written before the
   implementation, so the design decisions and their reasoning are recorded in
   the commit history.
-- No licence file is attached on purpose. This is a learning portfolio
-  repository and the underlying system originates from a graduation project.
+- The tools are read-only and keyed on a phone number with no second factor.
+  That is acceptable for a demo whose data is synthetic, and unacceptable in
+  production, where verifying the caller before returning tier, points or order
+  history is the minimum bar.
+- No licence file is attached on purpose. This is a portfolio repository.
 
 ---
 
