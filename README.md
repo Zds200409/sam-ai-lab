@@ -344,13 +344,20 @@ assistant, because users trust it.
 
 ## Demo
 
-| Screenshot | What it shows |
-| --- | --- |
-| `docs/demo/chat-streaming.png` | Streaming answer with source citations (TBD) |
-| `docs/demo/tool-calling.png` | Tool call resolving a real member tier (TBD) |
-| `docs/demo/fallback-handoff.png` | Low-confidence handoff path (TBD) |
+Run it locally and open `http://localhost:8081/ai-chat.html`. Three questions
+show the whole pipeline in under a minute:
 
-A 3-minute demo script is available in `docs/demo-script.md` (TBD).
+| Ask | What you should see |
+| --- | --- |
+| What discount does a premium tier get? | Answer retrieved from the charter, ending with a source line, no tool call |
+| What is my points balance? | The model asks for a phone number first |
+| What is my points balance, phone 18827578719 | Live value from MySQL, not a guess |
+
+The second question is the one worth watching. Before tool calling was wired,
+the assistant answered that it could not see account data. It now asks for the
+identifier instead of refusing, which is the behaviour a real service desk needs.
+
+Screenshots and a recorded walkthrough go in `docs/demo/` once captured.
 
 ---
 
