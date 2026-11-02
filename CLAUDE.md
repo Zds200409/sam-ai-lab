@@ -19,7 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### 方式二：手动启动
 ```bash
-# 后端 (端口 8080)
+# 后端 (端口 8081)
 ./mvnw spring-boot:run -DskipTests
 
 # 前端 (端口 5173，另一个终端)
@@ -88,7 +88,7 @@ cd frontend && npm run dev
 
 #### 6. 浏览器 Console 调试技巧
 - **localStorage Key**: Token 存在 `sam-token`，RefreshToken 存在 `sam-refresh-token`
-- **403 权限拦截演示** (答辩用):
+- **403 权限拦截验证**:
   ```javascript
   // 用收银员账号登录后，F12 Console 粘贴：
   fetch('/api/users/page', {
@@ -99,9 +99,9 @@ cd frontend && npm run dev
 
 ---
 
-## 🎓 答辩指南
+## RBAC 与演示路径
 
-### RBAC 权限矩阵（核心卖点）
+### RBAC 权限矩阵
 
 | 功能 | admin | cashier01 | manager01 | 拦截层 |
 |------|-------|-----------|-----------|--------|
@@ -113,7 +113,7 @@ cd frontend && npm run dev
 | 退款审批 | ✅ | 仅申请 | ✅ | 状态机 + 角色判断 |
 | 系统管理 | ✅ | 🔒 403 | 🔒 403 | `@RequireRole({"ROLE_ADMIN"})` |
 
-### 答辩演示路径（5 分钟）
+### 演示路径（5 分钟）
 1. **admin 登录** → 首页仪表盘 → 展示8项数据指标
 2. **新增会员** → 展示表单校验 + 重复手机号拦截
 3. **POS收银** → 搜会员 → 扫商品 → 计算折扣 → F8结算
@@ -121,16 +121,14 @@ cd frontend && npm run dev
 5. **权限拦截** → 切 cashier01 → F12 Console 粘贴403演示脚本
 6. **数据统计** → 日期筛选 + 趋势图 + 分类占比
 
-### 答辩口述要点
-- **开场** (30s): "我的毕设是山姆会员店会员消费管理系统，Spring Boot + Vue 3 全栈项目"
-- **亮点1** (1min): "RBAC做了三层：JWT认证 → @RequireRole授权 → @OperationLog审计"
-- **亮点2** (1min): "POS收银在一个事务里完成扣库存、生成订单、累加积分，退款走状态机"
-- **亮点3** (30s): "DataInitializer启动自愈 + Token双令牌自动续期 + 全局错误边界"
-- **收尾** (30s): "最大收获不是代码量，是理解了企业级系统的分层思想"
+### 技术亮点
+- RBAC 三层：JWT认证 → @RequireRole授权 → @OperationLog审计
+- POS 收银在一个事务里完成扣库存、生成订单、累加积分，退款走状态机
+- DataInitializer 启动自愈 + Token 双令牌自动续期 + 全局错误边界
 
 ### 环境依赖
 - JDK 17 (`C:\Users\赵\.jdks\ms-17.0.18`)
-- MySQL 8.0 (localhost:3306, 库名 `sam_member_mgmt`, root/root)
+- MySQL 8.0 (localhost:3306, 库名 `sam_ai_lab`, root/root)
 - Maven Wrapper 已安装 (`./mvnw`)，无需系统安装 Maven
 
 ---
@@ -140,7 +138,7 @@ cd frontend && npm run dev
 ### Backend (Spring Boot + Maven)
 
 ```bash
-# Run the app (dev profile, port 8080)
+# Run the app (dev profile, port 8081)
 ./mvnw spring-boot:run -DskipTests
 
 # Run tests
@@ -155,7 +153,7 @@ cd frontend && npm run dev
 ```bash
 cd frontend
 
-# Dev server (port 5173, proxies /api → localhost:8080)
+# Dev server (port 5173, proxies /api → localhost:8081)
 npm run dev
 
 # Build into ../src/main/resources/static
@@ -167,8 +165,8 @@ npm run build
 ## 📋 完善规划 (2026-06-06)
 
 ### 第一步 ✅ 端口对齐 — 已完成
-- 修复 `application.yml` 端口从非法值 `801180` → `8080`
-- 确认 Vite 代理 `localhost:8080` 与后端一致
+- 修复 `application.yml` 端口从非法值 `801180` → `8081`
+- 确认 Vite 代理 `localhost:8081` 与后端一致
 - 安装 Maven Wrapper (`./mvnw`)
 - Maven settings.xml 添加 `org.springframework.boot` pluginGroup
 - 创建 `start.bat` / `start.sh` 一键启动脚本
@@ -317,7 +315,7 @@ npm run build
 
 | # | 文件 | 位置 | 修复 | 原因 |
 |---|------|------|------|------|
-| 1 | `src/main/resources/application.yml:2` | `port: 801180 → 8080` | 端口 801180 超出 TCP 最大值 65535，且与 Vite 代理 8080 不一致 | 后端端口必须与 Vite proxy target 一致 |
+| 1 | `src/main/resources/application.yml:2` | `port: 801180 → 8081` | 端口 801180 超出 TCP 最大值 65535，且与 Vite 代理 8081 不一致 | 后端端口必须与 Vite proxy target 一致 |
 | 2 | `.mvn/wrapper/` (新增) | Maven Wrapper 生成 | `mvn` 不在 PATH，每次需完整路径 | 项目自包含构建工具，`./mvnw` 即可 |
 | 3 | `~/.m2/settings.xml` | 添加 `<pluginGroup>org.springframework.boot</pluginGroup>` | `spring-boot:run` 前缀解析失败 | 阿里云镜像缺少插件元数据 |
 | 4 | `start.bat` + `start.sh` (新增) | 项目根目录 | 一键设置 JAVA_HOME、启动后端+前端、打开浏览器 | 消除手动配置的重复劳动 |
@@ -387,8 +385,8 @@ npm run build
 ### Frontend tech stack
 
 Vue 3 (`<script setup>`), Element Plus (Chinese locale), Pinia, Vue Router, Axios, ECharts via `vue-echarts`
-Vite proxies `/api` to `localhost:8080` in dev; production build outputs to `../src/main/resources/static`
+Vite proxies `/api` to `localhost:8081` in dev; production build outputs to `../src/main/resources/static`
 
 ### Database
 
-MySQL database `sam_member_mgmt`. Run `sql/schema.sql` to initialize tables and `sql/data.sql` for seed data. MyBatis-Plus `map-underscore-to-camel-case: true` handles column-to-field mapping.
+MySQL database `sam_ai_lab`. Run `sql/schema.sql` to initialize tables and `sql/data.sql` for seed data. MyBatis-Plus `map-underscore-to-camel-case: true` handles column-to-field mapping.
